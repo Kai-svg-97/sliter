@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   addRecentFile,
   closeDatabase,
@@ -47,10 +51,32 @@ function App() {
   const [writeMode, setWriteMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [version, setVersion] = useState("");
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     getRecentFiles().then(setRecents).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    getVersion().then((v) => {
+      setVersion(v);
+      getCurrentWindow().setTitle(`sliter v${v} — SQLite editor`);
+    });
+    check().then((u) => { if (u) setPendingUpdate(u); }).catch(() => {});
+  }, []);
+
+  async function handleInstallUpdate() {
+    if (!pendingUpdate) return;
+    setUpdating(true);
+    try {
+      await pendingUpdate.downloadAndInstall();
+      await relaunch();
+    } catch {
+      setUpdating(false);
+    }
+  }
 
   async function loadTables(connId: number): Promise<TableInfo[]> {
     const t = await listTables(connId);
@@ -212,6 +238,14 @@ function App() {
   if (conns.length === 0) {
     return (
       <div className="app">
+        {pendingUpdate && (
+          <div className="update-bar">
+            <span>업데이트 v{pendingUpdate.version} 사용 가능</span>
+            <button onClick={handleInstallUpdate} disabled={updating}>
+              {updating ? "설치 중…" : "지금 설치 후 재시작"}
+            </button>
+          </div>
+        )}
         {error && <div className="error-box top-error">{error}</div>}
         <StartScreen
           recents={recents}
@@ -230,8 +264,16 @@ function App() {
 
   return (
     <div className="app">
+      {pendingUpdate && (
+        <div className="update-bar">
+          <span>업데이트 v{pendingUpdate.version} 사용 가능</span>
+          <button onClick={handleInstallUpdate} disabled={updating}>
+            {updating ? "설치 중…" : "지금 설치 후 재시작"}
+          </button>
+        </div>
+      )}
       <header className="topbar">
-        <div className="brand">🗄️ sliter</div>
+        <div className="brand">🗄️ sliter{version && <span className="version-tag">v{version}</span>}</div>
         <button className="primary" disabled={busy} onClick={handleOpenPicker}>
           ＋ Open Database…
         </button>

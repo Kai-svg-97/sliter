@@ -23,6 +23,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWQIqP+W/BpnyOTavTKsp/puPmKg575O9PkYiq35MTV8kN6NSVg1Lh7i",
+      "endpoints": [
+        "https://github.com/Kai-svg-97/sliter/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

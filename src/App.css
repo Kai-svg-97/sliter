@@ -686,3 +686,41 @@ button.big {
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* ── Version tag & update bar ─────────────────────────────── */
+.version-tag {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 6px;
+  letter-spacing: 0.03em;
+}
+
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 16px;
+  background: #1a3a1a;
+  border-bottom: 1px solid #2a6a2a;
+  font-size: 13px;
+  color: #7ddf7d;
+}
+.update-bar button {
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #2a6a2a;
+  color: #c8ffc8;
+  border: 1px solid #3a9a3a;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.update-bar button:hover:not(:disabled) {
+  background: #3a8a3a;
+}
+.update-bar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
