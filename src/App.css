@@ -724,3 +724,36 @@ button.big {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Sidebar table-loading spinner ───────────────────────────── */
+@keyframes tree-spin {
+  to { transform: rotate(360deg); }
+}
+.tree-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tree-spin 0.55s linear infinite;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* ── Browser content loading placeholder ─────────────────────── */
+.browser-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.browser-loading::after {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tree-spin 0.65s linear infinite;
+}

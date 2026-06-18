@@ -51,6 +51,7 @@ function App() {
   const [writeMode, setWriteMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const [version, setVersion] = useState("");
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -304,6 +305,7 @@ function App() {
             selected={selected}
             activeConnId={activeConnId}
             busy={busy}
+            browseLoading={browseLoading}
             onToggleExpand={toggleExpand}
             onSelectTable={selectTable}
             onSelectDb={selectDb}
@@ -344,6 +346,7 @@ function App() {
                   key={`${selected.connId}:${selected.table}`}
                   connId={selected.connId}
                   table={selected.table}
+                  onLoadingChange={setBrowseLoading}
                 />
               ) : (
                 <div className="placeholder muted">

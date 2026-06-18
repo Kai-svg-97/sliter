@@ -16,9 +16,11 @@ const PAGE_SIZE = 100;
 export default function TableBrowser({
   connId,
   table,
+  onLoadingChange,
 }: {
   connId: number;
   table: string;
+  onLoadingChange?: (loading: boolean) => void;
 }) {
   const [columns, setColumns] = useState<ColumnInfo[]>([]);
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -28,18 +30,26 @@ export default function TableBrowser({
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Tracks which table has already triggered a COUNT so page navigation
-  // doesn't re-issue COUNT(*) on every page change.
-  const countedKey = useRef("");
+  const genRef = useRef(0);
+  const countGenRef = useRef(0);
 
+  // Notify parent of loading state (drives sidebar spinner).
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
+
+  // Clear stale data immediately when the selected table changes so the user
+  // sees a clean loading state rather than the previous table's rows.
   useEffect(() => {
     setPage(0);
     setTotal(null);
-    countedKey.current = "";
+    setResult(null);
+    setColumns([]);
   }, [connId, table]);
 
+  // Fetch columns + rows for the current page.
   useEffect(() => {
-    let cancelled = false;
+    const gen = ++genRef.current;
     setLoading(true);
     setError(null);
 
@@ -48,26 +58,31 @@ export default function TableBrowser({
       getRows(connId, table, PAGE_SIZE, page * PAGE_SIZE),
     ])
       .then(([cols, rows]) => {
-        if (cancelled) return;
+        if (gen !== genRef.current) return;
         setColumns(cols);
         setResult(rows);
         setLoading(false);
-        // COUNT fires only after data is visible and only once per table,
-        // preventing it from racing with getRows for the per-connection lock.
-        const key = `${connId}:${table}`;
-        if (countedKey.current !== key) {
-          countedKey.current = key;
-          countRows(connId, table)
-            .then((n) => { if (!cancelled) setTotal(n); })
-            .catch(() => {});
-        }
       })
       .catch((e) => {
-        if (!cancelled) { setError(String(e)); setLoading(false); }
+        if (gen !== genRef.current) return;
+        setError(String(e));
+        setLoading(false);
       });
-
-    return () => { cancelled = true; };
   }, [connId, table, page]);
+
+  // Count rows on its own independent connection (never blocks get_rows).
+  // Debounced 300 ms so rapid table navigation doesn't queue up slow COUNTs.
+  useEffect(() => {
+    setTotal(null);
+    const countGen = ++countGenRef.current;
+    const timer = setTimeout(() => {
+      if (countGen !== countGenRef.current) return;
+      countRows(connId, table)
+        .then((n) => { if (countGen !== countGenRef.current) return; setTotal(n); })
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [connId, table]);
 
   async function handleExport(format: "csv" | "xml") {
     if (!result) return;
@@ -78,9 +93,10 @@ export default function TableBrowser({
         { name: format.toUpperCase(), extensions: [ext] },
       ]);
       if (!path) return;
-      const content = format === "csv"
-        ? toCSV(result.columns, result.rows)
-        : toXML(result.columns, result.rows);
+      const content =
+        format === "csv"
+          ? toCSV(result.columns, result.rows)
+          : toXML(result.columns, result.rows);
       await saveFile(path, content);
     } catch (e) {
       setError(String(e));
@@ -89,7 +105,8 @@ export default function TableBrowser({
     }
   }
 
-  const totalPages = total !== null ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : null;
+  const totalPages =
+    total !== null ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : null;
   const pk = columns.filter((c) => c.pk).map((c) => c.name);
   const isLastPage = totalPages !== null ? page >= totalPages - 1 : false;
 
@@ -151,6 +168,7 @@ export default function TableBrowser({
       </div>
 
       {error && <div className="error-box">{error}</div>}
+      {loading && !result && <div className="browser-loading" />}
       {result && !error && <DataGrid result={result} />}
     </div>
   );

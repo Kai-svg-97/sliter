@@ -30,12 +30,6 @@ export default function DataGrid({ result }: { result: QueryResult }) {
     };
   }, [menu]);
 
-  function openMenu(e: React.MouseEvent, rowIdx: number, colIdx: number) {
-    e.preventDefault();
-    e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx });
-  }
-
   function copyCell() {
     if (!menu) return;
     navigator.clipboard.writeText(cellText(result.rows[menu.rowIdx]?.[menu.colIdx] ?? null));
@@ -90,15 +84,27 @@ export default function DataGrid({ result }: { result: QueryResult }) {
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const td = (e.target as Element).closest("td");
+            if (!td) return;
+            const tr = td.closest("tr");
+            const ri = tr ? Number(tr.dataset.ri) : -1;
+            const ci = Number((td as HTMLElement).dataset.ci);
+            if (ri < 0 || isNaN(ci)) return;
+            setMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci });
+          }}
+        >
           {result.rows.map((row, ri) => (
-            <tr key={ri}>
+            <tr key={ri} data-ri={ri}>
               <td className="row-index">{ri + 1}</td>
               {row.map((cell, ci) => (
                 <td
                   key={ci}
+                  data-ci={ci}
                   title={cell === null ? "NULL" : String(cell)}
-                  onContextMenu={(e) => openMenu(e, ri, ci)}
                 >
                   {renderCell(cell)}
                 </td>

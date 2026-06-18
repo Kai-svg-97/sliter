@@ -29,6 +29,7 @@ export default function DbTree({
   selected,
   activeConnId,
   busy,
+  browseLoading,
   onToggleExpand,
   onSelectTable,
   onSelectDb,
@@ -41,6 +42,7 @@ export default function DbTree({
   selected: Selection | null;
   activeConnId: number | null;
   busy: boolean;
+  browseLoading: boolean;
   onToggleExpand: (key: string) => void;
   onSelectTable: (connId: number, table: string) => void;
   onSelectDb: (connId: number) => void;
@@ -113,8 +115,11 @@ export default function DbTree({
                       key={t.name}
                       icon="▦"
                       label={t.name}
-                      active={
-                        selected?.connId === conn.id && selected?.table === t.name
+                      active={selected?.connId === conn.id && selected?.table === t.name}
+                      loading={
+                        browseLoading &&
+                        selected?.connId === conn.id &&
+                        selected?.table === t.name
                       }
                       onClick={() => onSelectTable(conn.id, t.name)}
                     />
@@ -136,6 +141,11 @@ export default function DbTree({
                         icon="👁️"
                         label={t.name}
                         active={
+                          selected?.connId === conn.id &&
+                          selected?.table === t.name
+                        }
+                        loading={
+                          browseLoading &&
                           selected?.connId === conn.id &&
                           selected?.table === t.name
                         }
@@ -183,11 +193,13 @@ function Leaf({
   icon,
   label,
   active,
+  loading,
   onClick,
 }: {
   icon: string;
   label: string;
   active: boolean;
+  loading: boolean;
   onClick: () => void;
 }) {
   return (
@@ -196,7 +208,11 @@ function Leaf({
       onClick={onClick}
       title={label}
     >
-      <span className="tree-icon">{icon}</span>
+      {loading ? (
+        <span className="tree-spinner" />
+      ) : (
+        <span className="tree-icon">{icon}</span>
+      )}
       <span className="tree-label">{label}</span>
     </button>
   );

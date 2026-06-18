@@ -113,7 +113,10 @@ fn apply_perf_pragmas(conn: &Connection, read_only: bool) -> Result<(), String> 
     )
     .map_err(|e| e.to_string())?;
 
-    if !read_only {
+    if read_only {
+        conn.execute_batch("PRAGMA busy_timeout = 3000;")
+            .map_err(|e| e.to_string())?;
+    } else {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; \
              PRAGMA synchronous  = NORMAL; \
@@ -291,15 +294,30 @@ pub fn get_columns(
 
 /// Total row count for a table (used for pagination).
 ///
-/// This is intentionally a separate command so the frontend can fire it
-/// independently and display data rows immediately while the count loads.
+/// Opens a *fresh* read-only connection using the stored path so that the
+/// potentially-long COUNT(*) scan never holds the per-connection mutex and
+/// never blocks concurrent get_rows / get_columns calls on the same DB.
 #[tauri::command]
 pub fn count_rows(state: tauri::State<DbState>, conn_id: u32, table: String) -> Result<i64, String> {
-    with_conn(&state, conn_id, |conn| {
-        let sql = format!("SELECT COUNT(*) FROM {}", quote_ident(&table));
-        conn.query_row(&sql, [], |r| r.get::<_, i64>(0))
-            .map_err(|e| e.to_string())
-    })
+    let path = {
+        let dbs = state.dbs.lock().unwrap_or_else(|e| e.into_inner());
+        dbs.get(&conn_id)
+            .map(|arc| arc.lock().unwrap_or_else(|e| e.into_inner()).path.clone())
+            .ok_or_else(|| "Connection not found".to_string())?
+    };
+    let conn = Connection::open_with_flags(
+        &path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute_batch(
+        "PRAGMA busy_timeout = 3000; \
+         PRAGMA mmap_size = 536870912;",
+    )
+    .map_err(|e| e.to_string())?;
+    let sql = format!("SELECT COUNT(*) FROM {}", quote_ident(&table));
+    conn.query_row(&sql, [], |r| r.get::<_, i64>(0))
+        .map_err(|e| e.to_string())
 }
 
 /// A page of rows from a table. Ordered by `rowid` for a stable page sequence;
