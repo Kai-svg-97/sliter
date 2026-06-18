@@ -1,21 +1,88 @@
 import { useEffect, useRef, useState } from "react";
 import type { Cell, QueryResult } from "../api";
 
+const PREVIEW_LEN = 100; // chars shown before truncation
+
 type MenuState = { x: number; y: number; rowIdx: number; colIdx: number };
 
 function cellText(v: Cell): string {
   return v === null ? "" : String(v);
 }
 
-function renderCell(value: Cell) {
-  if (value === null) return <span className="cell-null">NULL</span>;
-  return String(value);
+function byteSizeStr(str: string): string {
+  const b = new TextEncoder().encode(str).length;
+  if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
+  if (b >= 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${b} B`;
 }
 
-export default function DataGrid({ result }: { result: QueryResult }) {
+function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="muted">
+            {value.length.toLocaleString()} chars · {byteSizeStr(value)}
+          </span>
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <pre className="modal-body">{value}</pre>
+      </div>
+    </div>
+  );
+}
+
+export default function DataGrid({
+  result,
+  onLoadMore,
+  hasMore = false,
+}: {
+  result: QueryResult;
+  onLoadMore?: () => Promise<Cell[][] | null>;
+  hasMore?: boolean;
+}) {
+  // rowsRef: accumulated rows from initial result + subsequent loads.
+  // Using a ref (not state) lets the IntersectionObserver callback mutate it
+  // without stale-closure issues; setTick() triggers a re-render to pick up changes.
+  const rowsRef = useRef<Cell[][]>(result.rows);
+  const [, setTick] = useState(0);
+  const refresh = () => setTick((n) => n + 1);
+
+  const hasMoreRef = useRef(hasMore);
+  const onLoadMoreRef = useRef(onLoadMore);
+  const fetchingRef = useRef(false);
+  const [fetchingMore, setFetchingMore] = useState(false);
+
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [modalValue, setModalValue] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Sync mutable refs with latest props
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore;
+  }, [onLoadMore]);
+
+  // Reset when result changes (new table opened or new SQL run)
+  useEffect(() => {
+    rowsRef.current = result.rows;
+    refresh();
+  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Context-menu dismiss on click-outside or Escape
   useEffect(() => {
     if (!menu) return;
     function dismiss(e: MouseEvent | KeyboardEvent) {
@@ -30,29 +97,61 @@ export default function DataGrid({ result }: { result: QueryResult }) {
     };
   }, [menu]);
 
+  // IntersectionObserver on sentinel — when visible, fetch the next batch.
+  // Effect runs once (empty deps); all values are read from refs at call time.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const ob = new IntersectionObserver(
+      async (entries) => {
+        if (!entries[0].isIntersecting) return;
+        if (fetchingRef.current) return;
+        if (!hasMoreRef.current || !onLoadMoreRef.current) return;
+
+        fetchingRef.current = true;
+        setFetchingMore(true);
+        try {
+          const more = await onLoadMoreRef.current();
+          if (more && more.length > 0) {
+            rowsRef.current = [...rowsRef.current, ...more];
+            refresh();
+          }
+        } finally {
+          fetchingRef.current = false;
+          setFetchingMore(false);
+        }
+      },
+      { rootMargin: "200px", threshold: 0 },
+    );
+
+    ob.observe(sentinel);
+    return () => ob.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- copy helpers ----
+  const rows = rowsRef.current;
+
   function copyCell() {
     if (!menu) return;
-    navigator.clipboard.writeText(cellText(result.rows[menu.rowIdx]?.[menu.colIdx] ?? null));
+    navigator.clipboard.writeText(cellText(rows[menu.rowIdx]?.[menu.colIdx] ?? null));
     setMenu(null);
   }
-
   function copyRecord() {
     if (!menu) return;
-    navigator.clipboard.writeText((result.rows[menu.rowIdx] ?? []).map(cellText).join("\t"));
+    navigator.clipboard.writeText((rows[menu.rowIdx] ?? []).map(cellText).join("\t"));
     setMenu(null);
   }
-
-  function copyPage() {
+  function copyVisible() {
     navigator.clipboard.writeText(
-      result.rows.map((row) => row.map(cellText).join("\t")).join("\n"),
+      rows.map((row) => row.map(cellText).join("\t")).join("\n"),
     );
     setMenu(null);
   }
-
-  function copyAll() {
+  function copyAllWithHeader() {
     const header = result.columns.join("\t");
-    const body = result.rows.map((row) => row.map(cellText).join("\t")).join("\n");
-    navigator.clipboard.writeText(body ? header + "\n" + body : header);
+    const body = rows.map((row) => row.map(cellText).join("\t")).join("\n");
+    navigator.clipboard.writeText(body ? `${header}\n${body}` : header);
     setMenu(null);
   }
 
@@ -69,10 +168,15 @@ export default function DataGrid({ result }: { result: QueryResult }) {
         >
           <button onClick={copyCell}>셀 복사</button>
           <button onClick={copyRecord}>레코드 복사</button>
-          <button onClick={copyPage}>현재 페이지 복사</button>
-          <button onClick={copyAll}>헤더 포함 전체 복사</button>
+          <button onClick={copyVisible}>표시된 행 복사</button>
+          <button onClick={copyAllWithHeader}>헤더 포함 전체 복사</button>
         </div>
       )}
+
+      {modalValue !== null && (
+        <CellModal value={modalValue} onClose={() => setModalValue(null)} />
+      )}
+
       <table className="data-grid">
         <thead>
           <tr>
@@ -97,23 +201,58 @@ export default function DataGrid({ result }: { result: QueryResult }) {
             setMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci });
           }}
         >
-          {result.rows.map((row, ri) => (
+          {rows.map((row, ri) => (
             <tr key={ri} data-ri={ri}>
               <td className="row-index">{ri + 1}</td>
-              {row.map((cell, ci) => (
-                <td
-                  key={ci}
-                  data-ci={ci}
-                  title={cell === null ? "NULL" : String(cell)}
-                >
-                  {renderCell(cell)}
-                </td>
-              ))}
+              {row.map((cell, ci) => {
+                const str = cell === null ? null : String(cell);
+                const truncated = str !== null && str.length > PREVIEW_LEN;
+                return (
+                  <td
+                    key={ci}
+                    data-ci={ci}
+                    title={
+                      truncated
+                        ? str.slice(0, 300)
+                        : str ?? "NULL"
+                    }
+                  >
+                    {cell === null ? (
+                      <span className="cell-null">NULL</span>
+                    ) : truncated ? (
+                      <>
+                        {str.slice(0, PREVIEW_LEN)}
+                        <button
+                          className="cell-expand"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setModalValue(str);
+                          }}
+                        >
+                          … ({byteSizeStr(str)})
+                        </button>
+                      </>
+                    ) : (
+                      str
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
       </table>
-      {result.rows.length === 0 && <div className="grid-empty">No rows.</div>}
+
+      {rows.length === 0 && !fetchingMore && (
+        <div className="grid-empty">No rows.</div>
+      )}
+
+      {/* Sentinel: visible when scrolled near bottom → triggers next load */}
+      {hasMore && (
+        <div ref={sentinelRef} className="grid-sentinel">
+          {fetchingMore && <span className="grid-loading">불러오는 중…</span>}
+        </div>
+      )}
     </div>
   );
 }
