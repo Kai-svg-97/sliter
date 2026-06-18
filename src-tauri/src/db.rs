@@ -1,10 +1,10 @@
 //! SQLite access layer.
 //!
 //! Multiple databases can be open at once. Each open connection lives in a
-//! registry (`HashMap<u32, OpenDb>`) held in Tauri-managed state behind a
-//! `Mutex`, keyed by a connection id handed back to the frontend. All database
-//! work funnels through the commands at the bottom of this file so the frontend
-//! never touches the filesystem directly.
+//! registry (`HashMap<u32, Arc<Mutex<OpenDb>>>`) held in Tauri-managed state.
+//! Each connection has its own lock so a slow query on one DB never blocks
+//! operations on another — the outer registry lock is held only for the
+//! HashMap lookup (microseconds), then released before the DB work begins.
 
 use rusqlite::limits::Limit;
 use rusqlite::types::ValueRef;
@@ -13,7 +13,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// A single open database connection plus the metadata we track for it.
 pub struct OpenDb {
@@ -26,7 +26,7 @@ pub struct OpenDb {
 
 /// Tauri-managed application state: the registry of open connections.
 pub struct DbState {
-    dbs: Mutex<HashMap<u32, OpenDb>>,
+    dbs: Mutex<HashMap<u32, Arc<Mutex<OpenDb>>>>,
     next_id: AtomicU32,
 }
 
@@ -34,7 +34,6 @@ impl Default for DbState {
     fn default() -> Self {
         Self {
             dbs: Mutex::new(HashMap::new()),
-            // Start at 1 so a connection id is never 0 (falsy in the JS frontend).
             next_id: AtomicU32::new(1),
         }
     }
@@ -95,15 +94,55 @@ fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Look up a connection by id and run `f` against it. Centralizes locking
-/// (with poison recovery) and the "connection not found" error.
+/// Apply performance pragmas immediately after opening a connection.
+///
+/// - `cache_size`: 64 MB in-process page cache (default is ~2 MB).
+/// - `mmap_size`: up to 512 MB memory-mapped I/O — the single biggest win for
+///   large files because sequential reads hit the OS page cache instead of
+///   going through pread() syscalls.
+/// - `temp_store`: keep temp tables/indexes in RAM instead of a temp file.
+/// - `journal_mode = WAL` + `synchronous = NORMAL` (write mode only): WAL
+///   allows readers to proceed concurrently with a writer and is dramatically
+///   faster for mixed workloads; NORMAL sync is crash-safe in WAL mode.
+/// - `busy_timeout`: retry instead of immediately erroring on SQLITE_BUSY.
+fn apply_perf_pragmas(conn: &Connection, read_only: bool) -> Result<(), String> {
+    conn.execute_batch(
+        "PRAGMA cache_size  = -65536; \
+         PRAGMA mmap_size   = 536870912; \
+         PRAGMA temp_store  = MEMORY;",
+    )
+    .map_err(|e| e.to_string())?;
+
+    if !read_only {
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; \
+             PRAGMA synchronous  = NORMAL; \
+             PRAGMA busy_timeout = 5000;",
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Look up a connection by id, clone its `Arc` (releasing the registry lock
+/// immediately), then lock the per-connection mutex before invoking `f`.
+///
+/// This means a slow query on connection A never blocks an operation on
+/// connection B — they contend only on their own per-connection mutex.
 fn with_conn<T>(
     state: &tauri::State<DbState>,
     conn_id: u32,
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
-    let guard = state.dbs.lock().unwrap_or_else(|e| e.into_inner());
-    let db = guard.get(&conn_id).ok_or("Connection not found")?;
+    let arc = {
+        let guard = state.dbs.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .get(&conn_id)
+            .cloned()
+            .ok_or_else(|| "Connection not found".to_string())?
+    }; // registry lock released here
+    let db = arc.lock().unwrap_or_else(|e| e.into_inner());
     f(&db.conn)
 }
 
@@ -131,18 +170,6 @@ fn collect_rows(conn: &Connection, sql: &str) -> Result<QueryResult, String> {
     })
 }
 
-/// Count user tables + views (excludes SQLite internal tables).
-fn count_user_tables(conn: &Connection) -> Result<usize, String> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table','view') \
-         AND name NOT LIKE 'sqlite_%'",
-        [],
-        |r| r.get::<_, i64>(0),
-    )
-    .map(|n| n as usize)
-    .map_err(|e| e.to_string())
-}
-
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -153,9 +180,6 @@ pub fn open_database(
     path: String,
     read_only: bool,
 ) -> Result<ConnMeta, String> {
-    // Read-only opens with SQLITE_OPEN_READ_ONLY; write mode uses READ_WRITE
-    // WITHOUT create, so a mistyped/missing path errors instead of silently
-    // creating an empty database.
     let flags = if read_only {
         OpenFlags::SQLITE_OPEN_READ_ONLY
     } else {
@@ -165,30 +189,35 @@ pub fn open_database(
 
     // SQLITE_OPEN_READ_ONLY only protects the *main* database file: ATTACH would
     // otherwise open another file read-write (and could create one), defeating
-    // the "this tab can't change anything on disk" promise. Forbid ATTACH
-    // entirely on read-only connections so the guarantee covers the whole
-    // connection, not just the opened file.
+    // the "this tab can't change anything on disk" promise.
     if read_only {
         conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0);
     }
 
-    let table_count = count_user_tables(&conn)?;
+    apply_perf_pragmas(&conn, read_only)?;
 
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
-    state.dbs.lock().unwrap_or_else(|e| e.into_inner()).insert(
-        id,
-        OpenDb {
-            conn,
-            path: path.clone(),
-            read_only,
-        },
-    );
+    state
+        .dbs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(
+            id,
+            Arc::new(Mutex::new(OpenDb {
+                conn,
+                path: path.clone(),
+                read_only,
+            })),
+        );
 
+    // table_count is intentionally 0 — the frontend calls list_tables right
+    // after open_database, so running COUNT(*) here would be redundant and
+    // would block the open call for large databases.
     Ok(ConnMeta {
         id,
         path,
         read_only,
-        table_count,
+        table_count: 0,
     })
 }
 
@@ -261,6 +290,9 @@ pub fn get_columns(
 }
 
 /// Total row count for a table (used for pagination).
+///
+/// This is intentionally a separate command so the frontend can fire it
+/// independently and display data rows immediately while the count loads.
 #[tauri::command]
 pub fn count_rows(state: tauri::State<DbState>, conn_id: u32, table: String) -> Result<i64, String> {
     with_conn(&state, conn_id, |conn| {
@@ -320,11 +352,6 @@ pub fn execute_sql(
             return collect_rows(conn, &sql);
         }
 
-        // `execute` runs exactly one statement and reports its affected-row
-        // count. It deliberately rejects SQL with trailing statements; when that
-        // happens we re-run the whole thing as a batch so scripts aren't
-        // silently truncated (a batch has no per-statement count, hence
-        // `rows_affected: None`).
         match conn.execute(&sql, []) {
             Ok(affected) => Ok(QueryResult {
                 columns: vec![],
