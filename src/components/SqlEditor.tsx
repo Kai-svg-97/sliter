@@ -1,13 +1,71 @@
 import { useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import type { EditorView } from "@codemirror/view";
 import { sql, SQLite } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap, Prec } from "@uiw/react-codemirror";
+import type { EditorView } from "@uiw/react-codemirror";
 import { format as sqlFormat } from "sql-formatter";
 import { executeSql, pickSavePath, saveFile, type QueryResult } from "../api";
 import DataGrid from "./DataGrid";
 import { toCSV, toXML } from "../utils/export";
+
+/** Split SQL text into statements, skipping semicolons inside strings/comments. */
+function splitStatements(sql: string): Array<{ text: string; from: number; to: number }> {
+  const stmts: Array<{ text: string; from: number; to: number }> = [];
+  let stmtStart = 0;
+  let i = 0;
+
+  while (i < sql.length) {
+    const ch = sql[i];
+
+    // Quoted strings / identifiers — skip until matching closing quote (doubled = escaped)
+    if (ch === "'" || ch === '"' || ch === '`') {
+      const q = ch;
+      i++;
+      while (i < sql.length) {
+        if (sql[i] === q) {
+          i++;
+          if (i < sql.length && sql[i] === q) i++; // '' or "" or `` escape
+          else break;
+        } else {
+          i++;
+        }
+      }
+      continue;
+    }
+
+    // Line comment: -- ...
+    if (ch === '-' && sql[i + 1] === '-') {
+      while (i < sql.length && sql[i] !== '\n') i++;
+      continue;
+    }
+
+    // Block comment: /* ... */
+    if (ch === '/' && sql[i + 1] === '*') {
+      i += 2;
+      while (i < sql.length && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+
+    // Statement boundary
+    if (ch === ';') {
+      const chunk = sql.slice(stmtStart, i + 1).trim();
+      if (chunk) stmts.push({ text: chunk, from: stmtStart, to: i + 1 });
+      i++;
+      stmtStart = i;
+      continue;
+    }
+
+    i++;
+  }
+
+  // Trailing statement without a semicolon
+  const trailing = sql.slice(stmtStart).trim();
+  if (trailing) stmts.push({ text: trailing, from: stmtStart, to: sql.length });
+
+  return stmts;
+}
 
 export default function SqlEditor({
   connId,
@@ -15,12 +73,14 @@ export default function SqlEditor({
   value,
   onChange,
   onSchemaMaybeChanged,
+  onSaveQuery,
 }: {
   connId: number;
   readOnly: boolean;
   value: string;
   onChange: (sql: string) => void;
   onSchemaMaybeChanged: () => void;
+  onSaveQuery?: (name: string, sql: string) => Promise<void>;
 }) {
   const code = value;
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -28,24 +88,55 @@ export default function SqlEditor({
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const editorRef = useRef<EditorView | null>(null);
 
   async function run() {
-    const trimmed = code.trim();
-    if (!trimmed) return;
+    const view = editorRef.current;
+    let sqlToRun: string;
+    let modeLabel: string;
+
+    if (view) {
+      const { state } = view;
+      const sel = state.selection.main;
+
+      if (sel.from < sel.to) {
+        // Explicit selection → run exactly that
+        sqlToRun = state.sliceDoc(sel.from, sel.to).trim();
+        modeLabel = "선택";
+      } else {
+        // No selection → run the statement the cursor is inside
+        const full = state.doc.toString();
+        const stmts = splitStatements(full);
+        const cursor = sel.from;
+        const stmt =
+          stmts.find((s) => cursor >= s.from && cursor <= s.to) ??
+          stmts[stmts.length - 1];
+        sqlToRun = stmt?.text ?? full.trim();
+        modeLabel = "커서";
+      }
+    } else {
+      sqlToRun = code.trim();
+      modeLabel = "";
+    }
+
+    if (!sqlToRun) return;
     setRunning(true);
     setError(null);
     setMessage(null);
     setResult(null);
     try {
-      const res = await executeSql(connId, trimmed);
+      const res = await executeSql(connId, sqlToRun);
       setResult(res);
       if (res.rows_affected !== null) {
         setMessage(`OK — ${res.rows_affected} row(s) affected.`);
         onSchemaMaybeChanged();
       } else {
-        setMessage(`${res.rows.length} row(s) returned.`);
+        const suffix = modeLabel ? ` (${modeLabel})` : "";
+        setMessage(`${res.rows.length} row(s) returned${suffix}.`);
       }
     } catch (e) {
       setError(String(e));
@@ -103,6 +194,19 @@ export default function SqlEditor({
     [],
   );
 
+  async function handleSaveQuery() {
+    const trimmed = saveName.trim();
+    if (!trimmed || !onSaveQuery) return;
+    setSaving(true);
+    try {
+      await onSaveQuery(trimmed, code);
+      setSaveName("");
+      setShowSaveForm(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleExport(format: "csv" | "xml") {
     if (!result) return;
     setExporting(true);
@@ -135,7 +239,7 @@ export default function SqlEditor({
           theme={oneDark}
           extensions={extensions}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
-          placeholder="Write SQL here…  (Ctrl/Cmd+Enter to run)"
+          placeholder="여러 쿼리를 작성하세요 (;로 구분). 커서 위치 쿼리 실행: Ctrl/Cmd+Enter"
         />
       </div>
       <div className="sql-actions">
@@ -149,13 +253,45 @@ export default function SqlEditor({
         >
           Format
         </button>
-        <span className="hint muted">Ctrl/Cmd + Enter</span>
+        <span className="hint muted">커서 쿼리 실행 · 블록 선택 후 실행 (Ctrl/Cmd+Enter)</span>
         {readOnly && (
           <span className="ro-hint" title="This database was opened read-only">
             read-only — writes will be rejected
           </span>
         )}
         {message && !error && <span className="ok-msg">{message}</span>}
+        {onSaveQuery && (
+          showSaveForm ? (
+            <div className="save-query-form">
+              <input
+                className="save-name-input"
+                placeholder="쿼리 이름…"
+                value={saveName}
+                autoFocus
+                onChange={(e) => setSaveName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveQuery();
+                  if (e.key === "Escape") { setShowSaveForm(false); setSaveName(""); }
+                }}
+              />
+              <button
+                className="primary"
+                disabled={saving || !saveName.trim()}
+                onClick={handleSaveQuery}
+              >
+                {saving ? "저장 중…" : "저장"}
+              </button>
+              <button onClick={() => { setShowSaveForm(false); setSaveName(""); }}>취소</button>
+            </div>
+          ) : (
+            <button
+              title="현재 쿼리를 Saved Queries에 저장"
+              onClick={() => setShowSaveForm(true)}
+            >
+              💾 Save
+            </button>
+          )
+        )}
         {hasRows && (
           <div className="export-group">
             <button

@@ -6,16 +6,22 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import {
   addRecentFile,
   closeDatabase,
+  deleteQuery,
   getRecentFiles,
+  getSavedQueries,
   listTables,
   openDatabase,
   pickDatabase,
   removeRecentFile,
+  renameQuery,
+  saveQuery,
   type RecentFile,
+  type SavedQuery,
   type TableInfo,
 } from "./api";
 import StartScreen from "./components/StartScreen";
 import DbTree, { type Selection } from "./components/DbTree";
+import QueryPanel from "./components/QueryPanel";
 import TableBrowser from "./components/TableBrowser";
 import SqlEditor from "./components/SqlEditor";
 import "./App.css";
@@ -52,12 +58,14 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [browseLoading, setBrowseLoading] = useState(false);
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
   const [version, setVersion] = useState("");
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     getRecentFiles().then(setRecents).catch(() => {});
+    getSavedQueries().then(setSavedQueries).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -65,8 +73,31 @@ function App() {
       setVersion(v);
       getCurrentWindow().setTitle(`sliter v${v} — SQLite editor`);
     });
-    check().then((u) => { if (u) setPendingUpdate(u); }).catch(() => {});
+    check().then((u) => { if (u) setPendingUpdate(u); }).catch((e) => {
+      console.warn("[updater] check failed:", e);
+    });
   }, []);
+
+  async function handleSaveQuery(name: string, sql: string) {
+    const updated = await saveQuery(name, sql);
+    setSavedQueries(updated);
+  }
+
+  async function handleDeleteQuery(id: string) {
+    const updated = await deleteQuery(id);
+    setSavedQueries(updated);
+  }
+
+  async function handleRenameQuery(id: string, name: string) {
+    const updated = await renameQuery(id, name);
+    setSavedQueries(updated);
+  }
+
+  function handleLoadQuery(sql: string) {
+    if (activeConnId === null) return;
+    setSqlText((prev) => ({ ...prev, [activeConnId]: sql }));
+    setContentTab("sql");
+  }
 
   async function handleInstallUpdate() {
     if (!pendingUpdate) return;
@@ -312,6 +343,14 @@ function App() {
             onCloseDb={handleCloseConn}
             onReopenWritable={handleReopenWritable}
           />
+          <div className="sidebar-divider" />
+          <QueryPanel
+            queries={savedQueries}
+            activeConnId={activeConnId}
+            onLoad={handleLoadQuery}
+            onDelete={handleDeleteQuery}
+            onRename={handleRenameQuery}
+          />
         </aside>
 
         <main className="content">
@@ -372,6 +411,7 @@ function App() {
                         setSqlText((prev) => ({ ...prev, [c.id]: v }))
                       }
                       onSchemaMaybeChanged={() => loadTables(c.id)}
+                      onSaveQuery={handleSaveQuery}
                     />
                   </div>
                 ))

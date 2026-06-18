@@ -828,6 +828,146 @@ button.big {
   vertical-align: middle;
 }
 
+/* ── Saved queries panel ──────────────────────────────────────── */
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+.query-panel {
+  padding-bottom: 8px;
+}
+
+.query-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.query-panel-header:hover {
+  background: var(--panel);
+  border: none;
+}
+
+.query-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+}
+
+.query-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 0;
+}
+
+.query-load {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 5px 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+}
+.query-load:hover:not(:disabled) {
+  background: var(--panel);
+  border: none;
+}
+.query-load:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.query-icon {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.query-delete {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 4px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.query-item:hover .query-delete {
+  opacity: 1;
+}
+.query-delete:hover {
+  background: var(--error-bg);
+  color: var(--error-fg);
+  border: none;
+}
+
+.query-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.query-rename-row {
+  flex: 1;
+  padding: 2px 4px;
+}
+.query-rename-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.query-rename-input:focus {
+  outline: none;
+}
+
+/* ── Save query inline form (in SqlEditor toolbar) ────────────── */
+.save-query-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.save-name-input {
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 13px;
+  width: 180px;
+}
+.save-name-input:focus {
+  outline: none;
+}
+.save-name-input::placeholder {
+  color: var(--muted);
+}
+
 /* ── Browser content loading placeholder ─────────────────────── */
 .browser-loading {
   flex: 1;

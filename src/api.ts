@@ -76,6 +76,27 @@ export const getRows = (
 export const executeSql = (connId: number, sql: string) =>
   invoke<QueryResult>("execute_sql", { connId, sql });
 
+// ---- Saved queries ----
+
+export interface SavedQuery {
+  id: string;
+  name: string;
+  sql: string;
+  created_at: number;
+}
+
+export const getSavedQueries = () =>
+  invoke<SavedQuery[]>("get_saved_queries");
+
+export const saveQuery = (name: string, sql: string) =>
+  invoke<SavedQuery[]>("save_query", { name, sql });
+
+export const deleteQuery = (id: string) =>
+  invoke<SavedQuery[]>("delete_query", { id });
+
+export const renameQuery = (id: string, name: string) =>
+  invoke<SavedQuery[]>("rename_query", { id, name });
+
 // ---- Recent files ----
 
 export const getRecentFiles = () =>

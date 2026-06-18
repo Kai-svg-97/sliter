@@ -1,4 +1,5 @@
 mod db;
+mod queries;
 mod recents;
 
 use db::DbState;
@@ -26,6 +27,10 @@ pub fn run() {
             recents::get_recent_files,
             recents::add_recent_file,
             recents::remove_recent_file,
+            queries::get_saved_queries,
+            queries::save_query,
+            queries::delete_query,
+            queries::rename_query,
             save_file,
         ])
         .run(tauri::generate_context!())
