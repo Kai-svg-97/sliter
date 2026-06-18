@@ -92,7 +92,7 @@ button.big {
 .db-path {
   margin-left: auto;
   color: var(--muted);
-  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-family: "Fira Code", ui-monospace, "Cascadia Code", monospace;
   font-size: 12px;
   max-width: 50%;
   overflow: hidden;
@@ -315,7 +315,7 @@ button.big {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
-  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-family: "Fira Code", ui-monospace, "Cascadia Code", monospace;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -612,7 +612,7 @@ button.big {
 }
 .cm-host .cm-scroller {
   overflow: auto;
-  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-family: "Fira Code", ui-monospace, "Cascadia Code", monospace;
 }
 
 /* ---- Messages ---- */
