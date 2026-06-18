@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 export interface ConnMeta {
   id: number;
@@ -86,3 +86,11 @@ export const addRecentFile = (path: string) =>
 
 export const removeRecentFile = (path: string) =>
   invoke<RecentFile[]>("remove_recent_file", { path });
+
+export const pickSavePath = (
+  defaultName: string,
+  filters: { name: string; extensions: string[] }[],
+) => save({ defaultPath: defaultName, filters });
+
+export const saveFile = (path: string, content: string) =>
+  invoke<void>("save_file", { path, content });

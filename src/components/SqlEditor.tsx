@@ -3,8 +3,9 @@ import CodeMirror from "@uiw/react-codemirror";
 import { sql, SQLite } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap, Prec } from "@uiw/react-codemirror";
-import { executeSql, type QueryResult } from "../api";
+import { executeSql, pickSavePath, saveFile, type QueryResult } from "../api";
 import DataGrid from "./DataGrid";
+import { toCSV, toXML } from "../utils/export";
 
 export default function SqlEditor({
   connId,
@@ -24,9 +25,8 @@ export default function SqlEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  // `run` reads the latest `code` from state; the keymap closure below captures
-  // this function, which is stable enough for our needs (state is read at call).
   async function run() {
     const trimmed = code.trim();
     if (!trimmed) return;
@@ -39,7 +39,6 @@ export default function SqlEditor({
       setResult(res);
       if (res.rows_affected !== null) {
         setMessage(`OK — ${res.rows_affected} row(s) affected.`);
-        // DDL/DML may have changed the schema; let the parent refresh tables.
         onSchemaMaybeChanged();
       } else {
         setMessage(`${res.rows.length} row(s) returned.`);
@@ -52,13 +51,9 @@ export default function SqlEditor({
     }
   }
 
-  // The keymap is built once, so it must not close over `run` directly (that
-  // would capture stale `code`). Route through a ref that always points at the
-  // latest `run`, updated on every render below.
   const runRef = useRef(run);
   runRef.current = run;
 
-  // Ctrl/Cmd+Enter runs the query. High precedence so it wins over defaults.
   const extensions = useMemo(
     () => [
       sql({ dialect: SQLite }),
@@ -76,6 +71,28 @@ export default function SqlEditor({
     ],
     [],
   );
+
+  async function handleExport(format: "csv" | "xml") {
+    if (!result) return;
+    setExporting(true);
+    try {
+      const ext = format === "csv" ? "csv" : "xml";
+      const path = await pickSavePath(`query_result.${ext}`, [
+        { name: format.toUpperCase(), extensions: [ext] },
+      ]);
+      if (!path) return;
+      const content = format === "csv"
+        ? toCSV(result.columns, result.rows)
+        : toXML(result.columns, result.rows);
+      await saveFile(path, content);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const hasRows = result !== null && result.columns.length > 0;
 
   return (
     <div className="sql-editor">
@@ -100,11 +117,29 @@ export default function SqlEditor({
           </span>
         )}
         {message && !error && <span className="ok-msg">{message}</span>}
+        {hasRows && (
+          <div className="export-group">
+            <button
+              className="export-btn"
+              disabled={exporting}
+              title="결과를 CSV로 저장"
+              onClick={() => handleExport("csv")}
+            >
+              CSV
+            </button>
+            <button
+              className="export-btn"
+              disabled={exporting}
+              title="결과를 XML로 저장"
+              onClick={() => handleExport("xml")}
+            >
+              XML
+            </button>
+          </div>
+        )}
       </div>
       {error && <div className="error-box">{error}</div>}
-      {result && result.columns.length > 0 && !error && (
-        <DataGrid result={result} />
-      )}
+      {hasRows && !error && <DataGrid result={result} />}
     </div>
   );
 }
