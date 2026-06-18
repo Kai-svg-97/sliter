@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
+import type { EditorView } from "@codemirror/view";
 import { sql, SQLite } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap, Prec } from "@uiw/react-codemirror";
+import { format as sqlFormat } from "sql-formatter";
 import { executeSql, pickSavePath, saveFile, type QueryResult } from "../api";
 import DataGrid from "./DataGrid";
 import { toCSV, toXML } from "../utils/export";
@@ -26,6 +28,8 @@ export default function SqlEditor({
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  const editorRef = useRef<EditorView | null>(null);
 
   async function run() {
     const trimmed = code.trim();
@@ -51,8 +55,34 @@ export default function SqlEditor({
     }
   }
 
+  function handleFormat() {
+    const view = editorRef.current;
+    if (!view) return;
+    const { state } = view;
+    const sel = state.selection.main;
+    const hasSelection = sel.from < sel.to;
+    const from = hasSelection ? sel.from : 0;
+    const to = hasSelection ? sel.to : state.doc.length;
+    const text = state.sliceDoc(from, to);
+    let formatted: string;
+    try {
+      formatted = sqlFormat(text, {
+        language: "sqlite",
+        tabWidth: 2,
+        keywordCase: "upper",
+        linesBetweenQueries: 2,
+      });
+    } catch {
+      return;
+    }
+    view.dispatch({ changes: { from, to, insert: formatted } });
+  }
+
   const runRef = useRef(run);
   runRef.current = run;
+
+  const formatRef = useRef(handleFormat);
+  formatRef.current = handleFormat;
 
   const extensions = useMemo(
     () => [
@@ -61,10 +91,11 @@ export default function SqlEditor({
         keymap.of([
           {
             key: "Mod-Enter",
-            run: () => {
-              runRef.current();
-              return true;
-            },
+            run: () => { runRef.current(); return true; },
+          },
+          {
+            key: "Alt-Shift-f",
+            run: () => { formatRef.current(); return true; },
           },
         ]),
       ),
@@ -100,6 +131,7 @@ export default function SqlEditor({
         <CodeMirror
           value={code}
           onChange={onChange}
+          onCreateEditor={(view) => { editorRef.current = view; }}
           theme={oneDark}
           extensions={extensions}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
@@ -109,6 +141,13 @@ export default function SqlEditor({
       <div className="sql-actions">
         <button className="primary" disabled={running} onClick={run}>
           {running ? "Running…" : "Run ▶"}
+        </button>
+        <button
+          disabled={running}
+          title="선택 영역(없으면 전체) 포맷 (Alt+Shift+F)"
+          onClick={handleFormat}
+        >
+          Format
         </button>
         <span className="hint muted">Ctrl/Cmd + Enter</span>
         {readOnly && (
