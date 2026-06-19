@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { sql, SQLite } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -93,6 +93,11 @@ export default function SqlEditor({
   const [saving, setSaving] = useState(false);
 
   const editorRef = useRef<EditorView | null>(null);
+  const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
+  }, []);
 
   async function run() {
     const view = editorRef.current;
@@ -199,7 +204,8 @@ export default function SqlEditor({
     if (!trimmed || !onSaveQuery) return;
     setSaving(true);
     try {
-      await onSaveQuery(trimmed, code);
+      const editorContent = editorRef.current?.state.doc.toString() ?? code;
+      await onSaveQuery(trimmed, editorContent);
       setSaveName("");
       setShowSaveForm(false);
     } finally {
@@ -234,11 +240,20 @@ export default function SqlEditor({
       <div className="cm-host">
         <CodeMirror
           value={code}
-          onChange={onChange}
+          onChange={(v) => {
+            if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
+            changeTimerRef.current = setTimeout(() => onChange(v), 300);
+          }}
           onCreateEditor={(view) => { editorRef.current = view; }}
           theme={oneDark}
           extensions={extensions}
-          basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
+          basicSetup={{
+            lineNumbers: true,
+            highlightActiveLine: true,
+            autocompletion: false,
+            highlightSelectionMatches: false,
+            foldGutter: false,
+          }}
           placeholder="여러 쿼리를 작성하세요 (;로 구분). 커서 위치 쿼리 실행: Ctrl/Cmd+Enter"
         />
       </div>

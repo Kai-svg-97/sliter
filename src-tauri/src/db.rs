@@ -84,7 +84,12 @@ fn value_to_json(v: ValueRef) -> JsonValue {
         ValueRef::Integer(i) => JsonValue::from(i),
         ValueRef::Real(f) => JsonValue::from(f),
         ValueRef::Text(t) => JsonValue::from(String::from_utf8_lossy(t).into_owned()),
-        ValueRef::Blob(b) => JsonValue::from(format!("<BLOB {} bytes>", b.len())),
+        ValueRef::Blob(b) => match std::str::from_utf8(b) {
+            // Text stored as BLOB (common for logs, JSON, XML, etc.)
+            Ok(s) => JsonValue::from(s.to_string()),
+            // Truly binary: show a short placeholder
+            Err(_) => JsonValue::from(format!("<BLOB {} bytes>", b.len())),
+        },
     }
 }
 

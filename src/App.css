@@ -266,10 +266,13 @@ button.big {
   border: 1px solid var(--border);
   padding: 5px 10px;
   text-align: left;
-  max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.data-grid th {
+  position: relative;
+  user-select: none;
 }
 .data-grid thead th {
   position: sticky;
@@ -277,6 +280,25 @@ button.big {
   background: var(--panel);
   z-index: 1;
   font-weight: 600;
+}
+.col-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+}
+.col-resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.45;
 }
 .data-grid tbody tr:nth-child(even) {
   background: var(--row-alt);
@@ -369,11 +391,46 @@ button.big {
 .modal-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   flex-shrink: 0;
+}
+.modal-head-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal-fmt-group {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.modal-fmt-btn {
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: "Fira Code", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.modal-fmt-btn:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.modal-fmt-btn.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
 }
 .modal-close {
   padding: 2px 8px;

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { format as sqlFormat } from "sql-formatter";
 import type { Cell, QueryResult } from "../api";
 
 const PREVIEW_LEN = 100;  // chars shown inline before truncation
@@ -17,23 +18,68 @@ function byteSizeStr(str: string): string {
   return `${b} B`;
 }
 
+type FormatMode = "RAW" | "SQL" | "JSON" | "XML";
+const FORMAT_MODES: FormatMode[] = ["RAW", "SQL", "JSON", "XML"];
+
+function prettyJson(s: string): string {
+  try { return JSON.stringify(JSON.parse(s), null, 2); }
+  catch { return s; }
+}
+
+function prettyXml(s: string): string {
+  try {
+    let indent = 0;
+    const pad = (n: number) => "  ".repeat(n);
+    return s
+      .replace(/>\s*</g, ">\n<")
+      .split("\n")
+      .reduce((acc, raw) => {
+        const t = raw.trim();
+        if (!t) return acc;
+        const isClose = t.startsWith("</");
+        const isSelf = t.endsWith("/>") || t.startsWith("<?") || t.startsWith("<!");
+        if (isClose) indent = Math.max(0, indent - 1);
+        acc += pad(indent) + t + "\n";
+        if (!isClose && !isSelf && t.startsWith("<") && !t.includes("</")) indent++;
+        return acc;
+      }, "")
+      .trimEnd();
+  } catch { return s; }
+}
+
+function applyFormat(value: string, mode: FormatMode): string {
+  try {
+    if (mode === "SQL")
+      return sqlFormat(value, { language: "sqlite", tabWidth: 2, keywordCase: "upper", linesBetweenQueries: 2 });
+    if (mode === "JSON") return prettyJson(value);
+    if (mode === "XML")  return prettyXml(value);
+  } catch { /* fall through */ }
+  return value;
+}
+
 function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
   const [chunks, setChunks] = useState(1);
+  const [fmt, setFmt] = useState<FormatMode>("RAW");
   const bodyRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const displayed = value.slice(0, chunks * MODAL_CHUNK);
-  const hasMore = displayed.length < value.length;
+  const content = useMemo(() => applyFormat(value, fmt), [value, fmt]);
 
-  // Esc to close
+  // Reset scroll position to start when format changes
+  useEffect(() => {
+    setChunks(1);
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [fmt]);
+
+  const displayed = content.slice(0, chunks * MODAL_CHUNK);
+  const hasMore = displayed.length < content.length;
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // IntersectionObserver relative to the scrollable modal body — fires when
-  // the sentinel near the bottom comes into view, loading the next chunk.
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const body = bodyRef.current;
@@ -46,27 +92,32 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
     return () => ob.disconnect();
   }, [hasMore]);
 
-  const loadedPct = Math.min(100, Math.round((displayed.length / value.length) * 100));
+  const loadedPct = Math.min(100, Math.round((displayed.length / content.length) * 100));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <span className="muted">
+          <span className="modal-head-info muted">
             {value.length.toLocaleString()} chars · {byteSizeStr(value)}
-            {hasMore && (
-              <span className="modal-load-pct"> · {loadedPct}% 표시됨</span>
-            )}
+            {hasMore && <span className="modal-load-pct"> · {loadedPct}% 표시됨</span>}
           </span>
+          <div className="modal-fmt-group">
+            {FORMAT_MODES.map((m) => (
+              <button
+                key={m}
+                className={`modal-fmt-btn${fmt === m ? " active" : ""}`}
+                onClick={() => setFmt(m)}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div ref={bodyRef} className="modal-body">
           <pre className="modal-pre">{displayed}</pre>
-          {hasMore && (
-            <div ref={sentinelRef} className="modal-sentinel">
-              불러오는 중…
-            </div>
-          )}
+          {hasMore && <div ref={sentinelRef} className="modal-sentinel">불러오는 중…</div>}
         </div>
       </div>
     </div>
@@ -96,8 +147,10 @@ export default function DataGrid({
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [modalValue, setModalValue] = useState<string | null>(null);
+  const [colWidths, setColWidths] = useState<Record<number, number> | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
 
   // Sync mutable refs with latest props
   useEffect(() => {
@@ -109,6 +162,7 @@ export default function DataGrid({
 
   // Reset when result changes (new table opened or new SQL run)
   useEffect(() => {
+    setColWidths(null);
     rowsRef.current = result.rows;
     refresh();
   }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -186,6 +240,35 @@ export default function DataGrid({
     setMenu(null);
   }
 
+  function startResize(e: React.MouseEvent, dataColIdx: number) {
+    e.preventDefault();
+    let widths = colWidths;
+    if (!widths) {
+      const cells = tableRef.current?.querySelectorAll("thead th");
+      const captured: Record<number, number> = {};
+      cells?.forEach((cell, i) => {
+        if (i > 0) captured[i - 1] = (cell as HTMLElement).offsetWidth;
+      });
+      widths = captured;
+      setColWidths(widths);
+    }
+    const startX = e.clientX;
+    const startW = widths[dataColIdx] ?? 160;
+
+    function onMove(ev: MouseEvent) {
+      setColWidths((prev) => ({
+        ...prev!,
+        [dataColIdx]: Math.max(40, startW + ev.clientX - startX),
+      }));
+    }
+    function onUp() {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   if (result.columns.length === 0) return null;
 
   return (
@@ -208,13 +291,26 @@ export default function DataGrid({
         <CellModal value={modalValue} onClose={() => setModalValue(null)} />
       )}
 
-      <table className="data-grid">
+      <table
+        ref={tableRef}
+        className="data-grid"
+        style={colWidths ? { tableLayout: "fixed", minWidth: "100%" } : undefined}
+      >
+        {colWidths && (
+          <colgroup>
+            <col style={{ width: 40 }} />
+            {result.columns.map((_, i) => (
+              <col key={i} style={{ width: colWidths[i] ?? 160 }} />
+            ))}
+          </colgroup>
+        )}
         <thead>
           <tr>
             <th className="row-index">#</th>
             {result.columns.map((col, i) => (
               <th key={i} title={col}>
-                {col}
+                <span className="col-label">{col}</span>
+                <div className="col-resize-handle" onMouseDown={(e) => startResize(e, i)} />
               </th>
             ))}
           </tr>
