@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format as sqlFormat } from "sql-formatter";
 import type { Cell, QueryResult } from "../api";
+import { pickSavePath, saveFile } from "../api";
 
 const PREVIEW_LEN = 100;  // chars shown inline before truncation
 const MODAL_CHUNK = 4000; // chars loaded per scroll step in the modal
@@ -60,6 +61,8 @@ function applyFormat(value: string, mode: FormatMode): string {
 function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
   const [chunks, setChunks] = useState(1);
   const [fmt, setFmt] = useState<FormatMode>("RAW");
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -94,6 +97,27 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
 
   const loadedPct = Math.min(100, Math.round((displayed.length / content.length) * 100));
 
+  function handleCopy() {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const extMap: Record<FormatMode, string> = { RAW: "txt", SQL: "sql", JSON: "json", XML: "xml" };
+      const ext = extMap[fmt];
+      const path = await pickSavePath(`cell_content.${ext}`, [
+        { name: ext.toUpperCase(), extensions: [ext] },
+      ]);
+      if (path) await saveFile(path, content);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -112,6 +136,14 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
                 {m}
               </button>
             ))}
+          </div>
+          <div className="modal-action-group">
+            <button className="modal-action-btn" onClick={handleCopy} title="클립보드에 복사">
+              {copied ? "✓" : "복사"}
+            </button>
+            <button className="modal-action-btn" disabled={saving} onClick={handleSave} title="파일로 저장">
+              {saving ? "…" : "저장"}
+            </button>
           </div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>

@@ -432,6 +432,30 @@ button.big {
   color: var(--accent-fg);
   border-color: var(--accent);
 }
+.modal-action-group {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.modal-action-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.modal-action-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.modal-action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .modal-close {
   padding: 2px 8px;
   font-size: 16px;
@@ -788,11 +812,7 @@ button.big {
   overflow-y: auto !important;
   font-family: "Fira Code", ui-monospace, "Cascadia Code", monospace;
 }
-/* Prevent line-wrapping so long lines extend horizontally */
-.cm-host .cm-content {
-  white-space: pre !important;
-  min-width: max-content;
-}
+
 
 /* ---- Messages ---- */
 .error-box {

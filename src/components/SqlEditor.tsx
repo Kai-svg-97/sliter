@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { sql, SQLite } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -67,7 +67,7 @@ function splitStatements(sql: string): Array<{ text: string; from: number; to: n
   return stmts;
 }
 
-export default function SqlEditor({
+const SqlEditor = memo(function SqlEditor({
   connId,
   readOnly,
   value,
@@ -332,4 +332,6 @@ export default function SqlEditor({
       {hasRows && !error && <DataGrid result={result} />}
     </div>
   );
-}
+});
+
+export default SqlEditor;
