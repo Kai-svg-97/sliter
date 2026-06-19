@@ -307,6 +307,23 @@ button.big {
   color: var(--muted);
 }
 
+/* ── Cell size badge (shown before … on truncated cells) ─────── */
+.cell-size-badge {
+  display: inline-block;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background: rgba(137, 180, 250, 0.1);
+  border: 1px solid rgba(137, 180, 250, 0.28);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 2px;
+  letter-spacing: 0.03em;
+  vertical-align: baseline;
+  pointer-events: none; /* click handled by parent button */
+}
+
 /* ── Cell truncation & expand button ─────────────────────────── */
 .cell-expand {
   display: inline;
@@ -370,6 +387,8 @@ button.big {
   flex: 1;
   overflow: auto;
   padding: 14px;
+}
+.modal-pre {
   margin: 0;
   font-family: "Fira Code", "Consolas", monospace;
   font-size: 13px;
@@ -377,6 +396,15 @@ button.big {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text);
+}
+.modal-sentinel {
+  padding: 8px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.modal-load-pct {
+  font-size: 11px;
 }
 
 /* ── Loaded-count label in browser-head ──────────────────────── */
@@ -699,8 +727,14 @@ button.big {
   font-size: 13px;
 }
 .cm-host .cm-scroller {
-  overflow: auto !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
   font-family: "Fira Code", ui-monospace, "Cascadia Code", monospace;
+}
+/* Prevent line-wrapping so long lines extend horizontally */
+.cm-host .cm-content {
+  white-space: pre !important;
+  min-width: max-content;
 }
 
 /* ---- Messages ---- */

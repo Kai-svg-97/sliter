@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Cell, QueryResult } from "../api";
 
-const PREVIEW_LEN = 100; // chars shown before truncation
+const PREVIEW_LEN = 100;  // chars shown inline before truncation
+const MODAL_CHUNK = 4000; // chars loaded per scroll step in the modal
 
 type MenuState = { x: number; y: number; rowIdx: number; colIdx: number };
 
@@ -17,13 +18,35 @@ function byteSizeStr(str: string): string {
 }
 
 function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
+  const [chunks, setChunks] = useState(1);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const displayed = value.slice(0, chunks * MODAL_CHUNK);
+  const hasMore = displayed.length < value.length;
+
+  // Esc to close
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [onClose]);
+
+  // IntersectionObserver relative to the scrollable modal body — fires when
+  // the sentinel near the bottom comes into view, loading the next chunk.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const body = bodyRef.current;
+    if (!sentinel || !body || !hasMore) return;
+    const ob = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setChunks((n) => n + 1); },
+      { root: body, rootMargin: "120px", threshold: 0 },
+    );
+    ob.observe(sentinel);
+    return () => ob.disconnect();
+  }, [hasMore]);
+
+  const loadedPct = Math.min(100, Math.round((displayed.length / value.length) * 100));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -31,12 +54,20 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
         <div className="modal-head">
           <span className="muted">
             {value.length.toLocaleString()} chars · {byteSizeStr(value)}
+            {hasMore && (
+              <span className="modal-load-pct"> · {loadedPct}% 표시됨</span>
+            )}
           </span>
-          <button className="modal-close" onClick={onClose}>
-            ×
-          </button>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
-        <pre className="modal-body">{value}</pre>
+        <div ref={bodyRef} className="modal-body">
+          <pre className="modal-pre">{displayed}</pre>
+          {hasMore && (
+            <div ref={sentinelRef} className="modal-sentinel">
+              불러오는 중…
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -224,12 +255,14 @@ export default function DataGrid({
                         {str.slice(0, PREVIEW_LEN)}
                         <button
                           className="cell-expand"
+                          title="클릭하여 전체 내용 보기"
                           onClick={(e) => {
                             e.stopPropagation();
                             setModalValue(str);
                           }}
                         >
-                          … ({byteSizeStr(str)})
+                          <span className="cell-size-badge">{byteSizeStr(str)}</span>
+                          {" "}…
                         </button>
                       </>
                     ) : (

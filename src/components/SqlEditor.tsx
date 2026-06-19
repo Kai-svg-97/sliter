@@ -248,10 +248,10 @@ export default function SqlEditor({
         </button>
         <button
           disabled={running}
-          title="선택 영역(없으면 전체) 포맷 (Alt+Shift+F)"
+          title="SQL 정렬 · 선택 영역만 또는 전체 (Alt+Shift+F)"
           onClick={handleFormat}
         >
-          Format
+          SQL 포맷
         </button>
         <span className="hint muted">커서 쿼리 실행 · 블록 선택 후 실행 (Ctrl/Cmd+Enter)</span>
         {readOnly && (
