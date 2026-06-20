@@ -921,6 +921,14 @@ button.big {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.update-error {
+  color: #ff8080;
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── Sidebar table-loading spinner ───────────────────────────── */
 @keyframes tree-spin {

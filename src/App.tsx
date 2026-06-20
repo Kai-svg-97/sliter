@@ -62,6 +62,8 @@ function App() {
   const [version, setVersion] = useState("");
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<{ downloaded: number; total: number | null; phase: "download" | "install" } | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
     getRecentFiles().then(setRecents).catch(() => {});
@@ -102,11 +104,26 @@ function App() {
   async function handleInstallUpdate() {
     if (!pendingUpdate) return;
     setUpdating(true);
+    setUpdateError(null);
+    setUpdateProgress({ downloaded: 0, total: null, phase: "download" });
     try {
-      await pendingUpdate.downloadAndInstall();
+      await pendingUpdate.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          setUpdateProgress({ downloaded: 0, total: event.data.contentLength ?? null, phase: "download" });
+        } else if (event.event === "Progress") {
+          setUpdateProgress((prev) => {
+            const downloaded = (prev?.downloaded ?? 0) + event.data.chunkLength;
+            return { downloaded, total: prev?.total ?? null, phase: "download" };
+          });
+        } else if (event.event === "Finished") {
+          setUpdateProgress({ downloaded: 0, total: null, phase: "install" });
+        }
+      });
       await relaunch();
-    } catch {
+    } catch (e) {
+      setUpdateError(String(e));
       setUpdating(false);
+      setUpdateProgress(null);
     }
   }
 
@@ -259,17 +276,40 @@ function App() {
     toggleExpand(`db:${connId}`);
   }
 
+  function renderUpdateBar() {
+    if (!pendingUpdate) return null;
+    let statusText = `업데이트 v${pendingUpdate.version} 사용 가능`;
+    let btnLabel = "지금 설치 후 재시작";
+    if (updateProgress) {
+      if (updateProgress.phase === "download") {
+        if (updateProgress.total) {
+          const pct = Math.round((updateProgress.downloaded / updateProgress.total) * 100);
+          const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
+          statusText = `다운로드 중… ${mb(updateProgress.downloaded)} / ${mb(updateProgress.total)} MB (${pct}%)`;
+        } else {
+          statusText = "다운로드 중…";
+        }
+        btnLabel = "다운로드 중…";
+      } else {
+        statusText = "설치 중… (UAC 창이 뜨면 '예' 클릭)";
+        btnLabel = "설치 중…";
+      }
+    }
+    return (
+      <div className="update-bar">
+        <span>{statusText}</span>
+        {updateError && <span className="update-error">{updateError}</span>}
+        <button onClick={handleInstallUpdate} disabled={updating}>
+          {btnLabel}
+        </button>
+      </div>
+    );
+  }
+
   if (conns.length === 0) {
     return (
       <div className="app">
-        {pendingUpdate && (
-          <div className="update-bar">
-            <span>업데이트 v{pendingUpdate.version} 사용 가능</span>
-            <button onClick={handleInstallUpdate} disabled={updating}>
-              {updating ? "설치 중…" : "지금 설치 후 재시작"}
-            </button>
-          </div>
-        )}
+        {renderUpdateBar()}
         {error && <div className="error-box top-error">{error}</div>}
         <StartScreen
           recents={recents}
@@ -288,14 +328,7 @@ function App() {
 
   return (
     <div className="app">
-      {pendingUpdate && (
-        <div className="update-bar">
-          <span>업데이트 v{pendingUpdate.version} 사용 가능</span>
-          <button onClick={handleInstallUpdate} disabled={updating}>
-            {updating ? "설치 중…" : "지금 설치 후 재시작"}
-          </button>
-        </div>
-      )}
+      {renderUpdateBar()}
       <header className="topbar">
         <div className="brand">🗄️ sliter{version && <span className="version-tag">v{version}</span>}</div>
         <button className="primary" disabled={busy} onClick={handleOpenPicker}>
