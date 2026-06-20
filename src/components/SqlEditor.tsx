@@ -99,11 +99,25 @@ function SqlEditorInner({
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [fontSize, setFontSize] = useState(13);
   const editorRef = useRef<EditorView | null>(null);
   const changeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => {
     if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setFontSize((prev) => Math.min(28, Math.max(9, prev + (e.deltaY < 0 ? 1 : -1))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   async function run() {
@@ -245,7 +259,7 @@ function SqlEditorInner({
 
   return (
     <div className="sql-editor">
-      <div className="cm-host">
+      <div ref={hostRef} className="cm-host" style={{ "--cm-font-size": `${fontSize}px` } as React.CSSProperties}>
         <CodeMirror
           value={code}
           onChange={(v) => {

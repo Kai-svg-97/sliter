@@ -63,6 +63,7 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
   const [fmt, setFmt] = useState<FormatMode>("RAW");
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fontSize, setFontSize] = useState(13);
   const bodyRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -82,6 +83,18 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setFontSize((prev) => Math.min(28, Math.max(9, prev + (e.deltaY < 0 ? 1 : -1))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -148,7 +161,7 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div ref={bodyRef} className="modal-body">
-          <pre className="modal-pre">{displayed}</pre>
+          <pre className="modal-pre" style={{ fontSize }}>{displayed}</pre>
           {hasMore && <div ref={sentinelRef} className="modal-sentinel">불러오는 중…</div>}
         </div>
       </div>
