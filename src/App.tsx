@@ -148,12 +148,7 @@ function App() {
       ]);
       setActiveConnId(meta.id);
       expandDb(meta.id);
-      const t = await loadTables(meta.id);
-      const first = t.find((x) => x.kind !== "view") ?? t[0];
-      if (first) {
-        setSelected({ connId: meta.id, table: first.name });
-        setContentTab("data");
-      }
+      await loadTables(meta.id);
       const updated = await addRecentFile(path);
       setRecents(updated);
     } catch (e) {
@@ -228,12 +223,9 @@ function App() {
       setActiveConnId(meta.id);
       expandDb(meta.id);
       const t = await loadTables(meta.id);
-      // Keep the same table selected if it still exists, else fall back.
+      // Keep the same table selected if it still exists; don't auto-select otherwise.
       const prevTable = selected?.connId === id ? selected.table : undefined;
-      const pick =
-        (prevTable && t.find((x) => x.name === prevTable)) ??
-        t.find((x) => x.kind !== "view") ??
-        t[0];
+      const pick = prevTable ? t.find((x) => x.name === prevTable) : null;
       setSelected(pick ? { connId: meta.id, table: pick.name } : null);
     } catch (e) {
       setError(String(e));

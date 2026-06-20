@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { format as sqlFormat } from "sql-formatter";
 import type { Cell, QueryResult } from "../api";
 import { pickSavePath, saveFile } from "../api";
@@ -156,7 +156,7 @@ function CellModal({ value, onClose }: { value: string; onClose: () => void }) {
   );
 }
 
-export default function DataGrid({
+const DataGrid = memo(function DataGrid({
   result,
   onLoadMore,
   hasMore = false,
@@ -416,4 +416,6 @@ export default function DataGrid({
       )}
     </div>
   );
-}
+});
+
+export default DataGrid;

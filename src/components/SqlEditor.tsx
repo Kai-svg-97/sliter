@@ -67,7 +67,7 @@ function splitStatements(sql: string): Array<{ text: string; from: number; to: n
   return stmts;
 }
 
-const SqlEditor = memo(function SqlEditor({
+function SqlEditorInner({
   connId,
   readOnly,
   value,
@@ -82,6 +82,13 @@ const SqlEditor = memo(function SqlEditor({
   onSchemaMaybeChanged: () => void;
   onSaveQuery?: (name: string, sql: string) => Promise<void>;
 }) {
+  // Store callbacks in refs so debounced handlers always call the latest version
+  // without needing stable prop references (prevents SqlEditor re-render churn).
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onSchemaMaybeChangedRef = useRef(onSchemaMaybeChanged);
+  onSchemaMaybeChangedRef.current = onSchemaMaybeChanged;
+
   const code = value;
   const [result, setResult] = useState<QueryResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -138,7 +145,7 @@ const SqlEditor = memo(function SqlEditor({
       setResult(res);
       if (res.rows_affected !== null) {
         setMessage(`OK — ${res.rows_affected} row(s) affected.`);
-        onSchemaMaybeChanged();
+        onSchemaMaybeChangedRef.current();
       } else {
         const suffix = modeLabel ? ` (${modeLabel})` : "";
         setMessage(`${res.rows.length} row(s) returned${suffix}.`);
@@ -242,7 +249,7 @@ const SqlEditor = memo(function SqlEditor({
           value={code}
           onChange={(v) => {
             if (changeTimerRef.current) clearTimeout(changeTimerRef.current);
-            changeTimerRef.current = setTimeout(() => onChange(v), 300);
+            changeTimerRef.current = setTimeout(() => onChangeRef.current(v), 300);
           }}
           onCreateEditor={(view) => { editorRef.current = view; }}
           theme={oneDark}
@@ -332,6 +339,14 @@ const SqlEditor = memo(function SqlEditor({
       {hasRows && !error && <DataGrid result={result} />}
     </div>
   );
-});
+}
+
+// Only re-render when data props change — ignore callback prop identity
+// (callbacks are forwarded through refs inside the component).
+const SqlEditor = memo(SqlEditorInner, (prev, next) =>
+  prev.connId === next.connId &&
+  prev.readOnly === next.readOnly &&
+  prev.value === next.value,
+);
 
 export default SqlEditor;
