@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
 import {
   addRecentFile,
   closeDatabase,
@@ -298,10 +299,23 @@ function App() {
     return (
       <div className="update-bar">
         <span>{statusText}</span>
-        {updateError && <span className="update-error">{updateError}</span>}
-        <button onClick={handleInstallUpdate} disabled={updating}>
-          {btnLabel}
-        </button>
+        {updateError && (
+          <span className="update-error" title={updateError}>
+            설치 실패 — 수동 다운로드 필요
+          </span>
+        )}
+        {!updateError && (
+          <button onClick={handleInstallUpdate} disabled={updating}>
+            {btnLabel}
+          </button>
+        )}
+        {updateError && (
+          <button
+            onClick={() => openUrl("https://github.com/Kai-svg-97/sliter/releases/latest")}
+          >
+            릴리즈 페이지 열기
+          </button>
+        )}
       </div>
     );
   }

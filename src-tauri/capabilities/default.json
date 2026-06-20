@@ -8,6 +8,7 @@
     "core:window:allow-set-title",
     "dialog:default",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "shell:allow-open"
   ]
 }
