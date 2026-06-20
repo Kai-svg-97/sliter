@@ -54,19 +54,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Verify signing key is present
-        shell: bash
-        run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set or is empty — bundles will not be signed and auto-update will not work!"
-            exit 1
-          fi
-          echo "TAURI_SIGNING_PRIVATE_KEY is set (length=${#TAURI_SIGNING_PRIVATE_KEY})"
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
-      # ── Branch builds: use tauri-action (no release, just artifact) ──────────
-      - name: Build (branch — artifacts only)
+      # ── Branch builds: build only, no release ────────────────────────────────
+      - name: Build (branch)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: tauri-apps/tauri-action@v0
         env:
@@ -74,7 +63,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Upload artifacts (branch builds)
+      - name: Upload artifacts (branch)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
@@ -86,29 +75,8 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: ignore
 
-      # ── Tag builds: build directly so signing env vars reach tauri build ──────
-      - name: Build Tauri app with signing (tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: npm run tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - name: Verify signing produced .sig files (tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          echo "=== All bundle files ==="
-          find src-tauri/target/release/bundle -type f | sort
-          SIG_COUNT=$(find src-tauri/target/release/bundle -name "*.sig" | wc -l)
-          echo ""
-          echo "Sig files found: $SIG_COUNT"
-          if [ "$SIG_COUNT" -eq 0 ]; then
-            echo "::error::No .sig files created — signing failed! Check TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
-            exit 1
-          fi
-
-      - name: Publish release from pre-built artifacts (tag)
+      # ── Tag builds: build, sign, and publish release ─────────────────────────
+      - name: Build and publish release (tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: tauri-apps/tauri-action@v0
         env:
@@ -130,4 +98,3 @@ jobs:
             | `sliter_*_amd64.AppImage` | Linux (portable) |
           releaseDraft: false
           prerelease: false
-          skipBuild: true
