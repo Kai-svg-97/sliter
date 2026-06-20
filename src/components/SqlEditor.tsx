@@ -170,12 +170,13 @@ function SqlEditorInner({
     let formatted: string;
     try {
       formatted = sqlFormat(text, {
-        language: "sqlite",
+        language: "sql",
         tabWidth: 2,
         keywordCase: "upper",
         linesBetweenQueries: 2,
       });
-    } catch {
+    } catch (e) {
+      setError(`포맷 오류: ${String(e)}`);
       return;
     }
     view.dispatch({ changes: { from, to, insert: formatted } });
