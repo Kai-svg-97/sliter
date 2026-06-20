@@ -1,6 +1,6 @@
 [package]
 name = "sliter"
-version = "0.1.22"
+version = "0.1.23"
 description = "A cross-platform SQLite database GUI"
 authors = ["kai"]
 edition = "2021"
